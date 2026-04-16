@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DELTA PREMIUM - SHOP 2</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        :root { --bg: #050508; --cyan: #00f2ff; --gold: #ffcc00; }
+        body { background: var(--bg); color: #fff; font-family: sans-serif; padding: 15px; }
+        .box { background: #111122; padding: 20px; border-radius: 15px; border: 1px solid #222; max-width: 400px; margin: auto; }
+        input { width: 100%; padding: 12px; margin: 8px 0; background: #000; color: #fff; border: 1px solid #333; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; background: var(--cyan); color: #000; margin-top: 10px; }
+        .st-success { color: #00ff88; } .st-pending { color: var(--gold); } .st-fail { color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div id="auth" class="box">
+        <h2 style="text-align:center; color:var(--cyan)">SHOP 2 VIP</h2>
+        <input type="text" id="u" placeholder="Tài khoản...">
+        <input type="password" id="p" placeholder="Mật khẩu...">
+        <button onclick="login()">ĐĂNG NHẬP</button>
+    </div>
+
+    <div id="main" class="box" style="display:none;">
+        <div>ID: <b id="dn" style="color:var(--cyan)"></b> | Ví: <b id="bl" style="color:var(--gold)">0</b>đ</div>
+        <hr style="border:0.5px solid #222; margin:15px 0;">
+        <input type="number" id="n-amt" placeholder="Số tiền nạp...">
+        <button style="background:var(--gold)" onclick="nap()">NẠP QUA SEPAY QR</button>
+        <div id="q-area" style="display:none; text-align:center; margin-top:10px;">
+            <img id="q-img" style="width:180px; border-radius:10px;">
+            <button onclick="confirm()">XÁC NHẬN ĐÃ BANK</button>
+        </div>
+        <hr style="border:0.5px solid #222; margin:15px 0;">
+        <button onclick="buy('tuan', 40000)">MUA KEY TUẦN (40k)</button>
+        <button onclick="buy('thang', 80000)">MUA KEY THÁNG (80k)</button>
+        <div id="hist" style="font-size:11px; margin-top:10px;"></div>
+    </div>
+
+<script>
+    const config = { apiKey: "AIzaSyBk6R1TDZeAxh37JQLgL_6Wl0v8m8Sg0", databaseURL: "https://shopctv-61f96-default-rtdb.asia-southeast1.firebasedatabase.app/" };
+    firebase.initializeApp(config); const db = firebase.database();
+    const BANK = { ID: "MB", STK: "0588807300000", NAME: "NGUYEN VAN A" };
+    let cur = null;
+
+    function login(){
+        const u = document.getElementById('u').value.trim().toLowerCase(), p = document.getElementById('p').value;
+        db.ref('users_shop2/'+u).once('value', s => {
+            if(s.val() && s.val().password == p){
+                cur = u; document.getElementById('auth').style.display='none'; document.getElementById('main').style.display='block';
+                document.getElementById('dn').innerText = u;
+                db.ref('users_shop2/'+u+'/balance').on('value', b => document.getElementById('bl').innerText = (b.val()||0).toLocaleString());
+                loadHist();
+            } else alert("Sai!");
+        });
+    }
+
+    function nap(){
+        const a = document.getElementById('n-amt').value; if(a < 1000) return;
+        document.getElementById('q-img').src = `https://qr.sepay.vn/img?acc=${BANK.STK}&bank=${BANK.ID}&amount=${a}&des=NAP%20${cur}&name=${BANK.NAME}`;
+        document.getElementById('q-area').style.display = 'block';
+    }
+
+    function confirm(){
+        db.ref('bank_requests').orderByChild('user').equalTo(cur).once('value', s => {
+            let p = 0; s.forEach(c => { if(c.val().status === 'Pending') p++; });
+            if(p >= 4) { db.ref('users_shop2/'+cur).remove(); location.reload(); return; }
+            const id = db.ref('bank_requests').push().key, t = new Date().toLocaleTimeString();
+            db.ref('bank_requests/'+id).set({user:cur, amount:document.getElementById('n-amt').value, shop:'users_shop2', status:'Pending', id:id, time:t});
+            db.ref('history_pay/'+cur+'/'+id).set({amount:document.getElementById('n-amt').value, status:'Pending', time:t});
+            alert("Đã báo sếp!"); document.getElementById('q-area').style.display='none';
+        });
+    }
+
+    function buy(type, pr){
+        db.ref('users_shop2/'+cur).once('value', s => {
+            const b = s.val().balance; if(b < pr) return alert("Hết tiền!");
+            db.ref('keys/shop2/'+type).limitToFirst(1).once('value', k => {
+                if(!k.val()) return alert("Hết hàng!");
+                const id = Object.keys(k.val())[0], kv = k.val()[id];
+                db.ref('users_shop2/'+cur+'/balance').set(b - pr);
+                db.ref('keys/shop2/'+type+'/'+id).remove();
+                alert("KEY: " + kv);
+            });
+        });
+    }
+
+    function loadHist(){
+        db.ref('history_pay/'+cur).on('value', s => {
+            const h = document.getElementById('hist'); h.innerHTML = "Lịch sử nạp:<br>";
+            s.forEach(c => {
+                const d = c.val(); let cl = d.status==='Success'?'st-success':(d.status==='Fail'?'st-fail':'st-pending');
+                h.innerHTML += `<div class="${cl}">${d.time} - ${d.amount}đ - ${d.status}</div>`;
+            });
+        });
+    }
+</script>
+</body>
+</html>
